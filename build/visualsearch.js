@@ -59,7 +59,7 @@
     this.searchBox.value(this.options.query || '');
 
     // Disable page caching for browsers that incorrectly cache the visual search inputs.
-    // This is forced the browser to re-render the page when it is retrieved in its history.
+    // This forces the browser to re-render the page when it is retrieved in its history.
     $(window).bind('unload', function(e) {});
 
     // Gives the user back a reference to the `searchBox` so they
@@ -94,7 +94,10 @@ VS.ui.SearchBox = Backbone.View.extend({
 
   // Creating a new SearchBox registers handlers for re-rendering facets when necessary,
   // as well as handling typing when a facet is selected.
-  initialize : function() {
+  initialize : function(options) {
+    if(options)
+      this.options = options;
+
     this.app = this.options.app;
     this.flags = {
       allSelected : false
@@ -144,15 +147,15 @@ VS.ui.SearchBox = Backbone.View.extend({
 
     return _.compact(query).join(' ');
   },
-  
+
   // Returns any facet views that are currently selected. Useful for changing the value
   // callbacks based on what else is in the search box and which facet is being edited.
   selected: function() {
-    return _.select(this.facetViews, function(view) { 
+    return _.select(this.facetViews, function(view) {
       return view.modes.editing == 'is' || view.modes.selected == 'is';
     });
   },
-  
+
   // Similar to `this.selected`, returns any facet models that are currently selected.
   selectedModels: function() {
     return _.pluck(this.selected(), 'model');
@@ -190,7 +193,7 @@ VS.ui.SearchBox = Backbone.View.extend({
     category     = VS.utils.inflector.trim(category);
     initialQuery = VS.utils.inflector.trim(initialQuery || '');
     if (!category) return;
-    
+
     var model = new VS.model.SearchFacet({
       category : category,
       value    : initialQuery || '',
@@ -258,14 +261,14 @@ VS.ui.SearchBox = Backbone.View.extend({
   // Render a single input, used to create and autocomplete facets
   renderSearchInput : function() {
     var input = new VS.ui.SearchInput({
-      position: this.inputViews.length, 
+      position: this.inputViews.length,
       app: this.app,
       showFacets: this.options.showFacets
     });
     this.$('.VS-search-inner').append(input.render().el);
     this.inputViews.push(input);
   },
-  
+
   // Handles showing/hiding the placeholder text
   renderPlaceholder : function() {
     var $placeholder = this.$('.VS-placeholder');
@@ -436,7 +439,7 @@ VS.ui.SearchBox = Backbone.View.extend({
     }
     if (options.selectText) view.selectText();
     this.resizeFacets();
-    
+
     return true;
   },
 
@@ -546,6 +549,9 @@ VS.ui.SearchFacet = Backbone.View.extend({
   },
 
   initialize : function(options) {
+    if(options)
+      this.options = options;
+
     this.flags = {
       canClose : false
     };
@@ -673,7 +679,7 @@ VS.ui.SearchFacet = Backbone.View.extend({
   // Search terms used in the autocomplete menu. These are specific to the facet,
   // and only match for the facet's category. The values are then matched on the
   // first letter of any word in matches, and finally sorted according to the
-  // value's own category. You can pass `preserveOrder` as an option in the 
+  // value's own category. You can pass `preserveOrder` as an option in the
   // `facetMatches` callback to skip any further ordering done client-side.
   autocompleteValues : function(req, resp) {
     var category = this.model.get('category');
@@ -683,7 +689,7 @@ VS.ui.SearchFacet = Backbone.View.extend({
     this.options.app.options.callbacks.valueMatches(category, searchTerm, function(matches, options) {
       options = options || {};
       matches = matches || [];
-      
+
       if (searchTerm && value != searchTerm) {
         if (options.preserveMatches) {
           resp(matches);
@@ -697,7 +703,7 @@ VS.ui.SearchFacet = Backbone.View.extend({
         });
         }
       }
-      
+
       if (options.preserveOrder) {
         resp(matches);
       } else {
@@ -927,6 +933,16 @@ VS.ui.SearchFacet = Backbone.View.extend({
       this.options.app.searchBox.focusNextFacet(this, -1, {startAtEnd: -1});
       this.remove(e);
     } else if (key == 'backspace') {
+       $(document).on('keydown.backspace', function(e) {
+          if (VS.app.hotkeys.key(e) === 'backspace') {
+             e.preventDefault();
+          }
+       });
+
+       $(document).on('keyup.backspace', function(e) {
+          $(document).off('.backspace');
+       });
+
       if (this.modes.selected == 'is') {
         e.preventDefault();
         this.remove(e);
@@ -935,6 +951,7 @@ VS.ui.SearchFacet = Backbone.View.extend({
         e.preventDefault();
         this.selectFacet();
       }
+       e.stopPropagation();
     }
 
     // Handle paste events
@@ -969,7 +986,10 @@ VS.ui.SearchInput = Backbone.View.extend({
     'dblclick input'  : 'startTripleClickTimer'
   },
 
-  initialize : function() {
+  initialize : function(options) {
+    if(options)
+      this.options = options;
+
     this.app = this.options.app;
     this.flags = {
       canClose : false
@@ -1005,6 +1025,8 @@ VS.ui.SearchInput = Backbone.View.extend({
       autoFocus : true,
       position  : {offset : "0 -1"},
       source    : _.bind(this.autocompleteValues, this),
+      // Prevent changing the input value on focus of an option
+      focus     : function() { return false; },
       create    : _.bind(function(e, ui) {
         $(this.el).find('.ui-autocomplete-input').css('z-index','auto');
       }, this),
@@ -1027,13 +1049,13 @@ VS.ui.SearchInput = Backbone.View.extend({
           ul.append('<li class="ui-autocomplete-category">'+item.category+'</li>');
           category = item.category;
         }
-        
+
         if(this._renderItemData) {
           this._renderItemData(ul, item);
         } else {
           this._renderItem(ul, item);
         }
-        
+
       }, this));
     };
 
@@ -1116,7 +1138,7 @@ VS.ui.SearchInput = Backbone.View.extend({
   addTextFacetRemainder : function(facetValue) {
     var boxValue = this.box.val();
     var lastWord = boxValue.match(/\b(\w+)$/);
-    
+
     if (!lastWord) {
       return '';
     }
@@ -1126,11 +1148,11 @@ VS.ui.SearchInput = Backbone.View.extend({
       boxValue = boxValue.replace(/\b(\w+)$/, '');
     }
     boxValue = boxValue.replace('^\s+|\s+$', '');
-    
+
     if (boxValue) {
       this.app.searchBox.addFacet(this.app.options.remainder, boxValue, this.options.position);
     }
-    
+
     return boxValue;
   },
 
