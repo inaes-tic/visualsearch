@@ -39,7 +39,9 @@
         focus           : $.noop,
         blur            : $.noop,
         facetMatches    : $.noop,
-        valueMatches    : $.noop
+        valueMatches    : $.noop,
+        clearSearch     : $.noop,
+        removedFacet    : $.noop,
       }
     };
     this.options           = _.extend({}, defaults, options);
@@ -223,7 +225,11 @@ VS.ui.SearchBox = Backbone.View.extend({
   // remaining facet is selected, but this is handled by the facet's view,
   // since its position is unknown by the time the collection triggers this
   // remove callback.
-  removedFacet : function (facet, query, options) {},
+  removedFacet : function (facet, query, options) {
+    if (this.app.options.callbacks.removedFacet) {
+      this.app.options.callbacks.removedFacet(facet, query, options);
+    }
+  },
 
   // Renders each facet as a searchFacet view.
   renderFacets : function() {
@@ -685,8 +691,8 @@ VS.ui.SearchFacet = Backbone.View.extend({
     var category = this.model.get('category');
     var value    = this.model.get('value');
     var searchTerm = req.term;
-
-    this.options.app.options.callbacks.valueMatches(category, searchTerm, function(matches, options) {
+    var currentQuery = this.model.get('app').searchQuery;
+    this.options.app.options.callbacks.valueMatches(category, searchTerm, currentQuery, function(matches, options) {
       options = options || {};
       matches = matches || [];
 
@@ -1036,7 +1042,17 @@ VS.ui.SearchInput = Backbone.View.extend({
         // e.stopPropagation();
         var remainder = this.addTextFacetRemainder(ui.item.value);
         var position  = this.options.position + (remainder ? 1 : 0);
-        this.app.searchBox.addFacet(ui.item instanceof String ? ui.item : ui.item.value, '', position);
+        var value = ui.item instanceof String ? ui.item : ui.item.value;
+        if (this.app.options.facets.indexOf(value) != -1) {
+            this.app.searchBox.addFacet(value, '', position);
+        } else {
+            var query = value;
+            this.app.searchBox.addFacet('text', value, position);
+            this.app.options.callbacks.search(query, this.app.searchQuery);
+            _.defer(_.bind(function() {
+                this.app.searchBox.focusNextFacet(this, 100);
+            }, this));
+        }
         return false;
       }, this)
     });
@@ -1059,6 +1075,12 @@ VS.ui.SearchInput = Backbone.View.extend({
       }, this));
     };
 
+    this.box.data('uiAutocomplete')._renderItem = function(ul, item) {
+        var term = this.element.val();
+        var   html = item.label.replace( term, "<b>$&</b>" );
+        return $( "<li></li>" ).append($("<a></a>").html(html)).appendTo(ul);
+    }
+
     this.box.autocomplete('widget').addClass('VS-interface');
   },
 
@@ -1070,7 +1092,7 @@ VS.ui.SearchInput = Backbone.View.extend({
     var searchTerm = req.term;
     var lastWord   = searchTerm.match(/\w+\*?$/); // Autocomplete only last word.
     var re         = VS.utils.inflector.escapeRegExp(lastWord && lastWord[0] || '');
-    this.app.options.callbacks.facetMatches(function(prefixes, options) {
+    this.app.options.callbacks.facetMatches(searchTerm, function(prefixes, options) {
       options = options || {};
       prefixes = prefixes || [];
 
@@ -1513,6 +1535,7 @@ VS.utils.inflector = {
   // that would be incorrect in a regex.
   escapeRegExp : function(s) {
     return s.replace(/([.*+?^${}()|[\]\/\\])/g, '\\$1');
+    //return s.replace(/[\-\[\]{}()*+?.,\\\^$|#\s]/g, "\\$&" );
   }
 };
 
